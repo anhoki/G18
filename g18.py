@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import re
 
 st.set_page_config(page_title="Dashboard de Proyectos", layout="wide")
 
@@ -17,17 +18,52 @@ def load_data():
     df = pd.read_excel(archivos[0], sheet_name=0)
     df.columns = df.columns.str.strip()
     
-    # Identificar columnas importantes
-    col_monto = next((col for col in df.columns if 'monto' in col.lower()), None)
-    col_proveedor = next((col for col in df.columns if 'formulador' in col.lower() or 'proveedor' in col.lower()), None)
-    col_tipo = next((col for col in df.columns if 'tipo' in col.lower() or 'estudio' in col.lower()), None)
-    col_depto = next((col for col in df.columns if 'departamento' in col.lower()), None)
-    col_contrato = next((col for col in df.columns if 'contrato' in col.lower()), None)
+    # === IDENTIFICAR COLUMNAS CORRECTAMENTE ===
+    col_monto = None
+    col_proveedor = None
+    col_tipo = None
+    col_depto = None
+    col_contrato = None
     
+    for col in df.columns:
+        col_lower = col.lower()
+        if 'monto' in col_lower:
+            col_monto = col
+        elif 'formulador' in col_lower or 'proveedor' in col_lower:
+            col_proveedor = col
+        elif 'tipo' in col_lower or 'estudio' in col_lower:
+            col_tipo = col
+        elif 'departamento' in col_lower:
+            col_depto = col
+        elif 'contrato' in col_lower:
+            # Buscar específicamente la columna de número de contrato
+            if 'no' in col_lower or 'número' in col_lower or col == 'No. Contrato':
+                col_contrato = col
+    
+    # Si no encontró con el criterio anterior, buscar cualquier columna con "contrato"
+    if not col_contrato:
+        for col in df.columns:
+            if 'contrato' in col.lower() and col != 'Contrato Administrativo':
+                col_contrato = col
+                break
+    
+    # Verificar que encontramos todo
     if not all([col_monto, col_proveedor, col_tipo, col_contrato]):
-        st.warning("No se encontraron todas las columnas necesarias")
-        return df
+        st.error(f"""
+        ❌ No se encontraron todas las columnas necesarias:
+        - Monto: {col_monto}
+        - Proveedor: {col_proveedor}
+        - Tipo: {col_tipo}
+        - Contrato: {col_contrato}
+        - Departamento: {col_depto}
+        
+        **Columnas disponibles:** {list(df.columns)}
+        """)
+        return pd.DataFrame()
     
+    # Filtrar filas donde el contrato NO sea "Contrato Administrativo" (texto, no número)
+    df = df[df[col_contrato] != 'Contrato Administrativo']
+    df = df.dropna(subset=[col_contrato])
     # ============================================
     # PASO 1: Agrupar por CONTRATO (sumar productos del mismo contrato)
     # ============================================
