@@ -1,121 +1,57 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
-from io import BytesIO
-import base64
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Dashboard de Proyectos de Infraestructura",
+    page_title="Dashboard de Proyectos",
     page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
-
-# Estilo personalizado
-st.markdown("""
-<style>
-    .stAlert {
-        border-radius: 10px;
-    }
-    .big-font {
-        font-size: 20px !important;
-        font-weight: bold;
-    }
-    .risk-high {
-        background-color: #ffcccc;
-        padding: 10px;
-        border-radius: 10px;
-        border-left: 5px solid red;
-    }
-    .risk-medium {
-        background-color: #fff3cc;
-        padding: 10px;
-        border-radius: 10px;
-        border-left: 5px solid orange;
-    }
-    .risk-low {
-        background-color: #ccffcc;
-        padding: 10px;
-        border-radius: 10px;
-        border-left: 5px solid green;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================
-# CARGA Y LIMPIEZA DE DATOS
-# ============================================
 
 @st.cache_data
 def load_data():
-    """Carga y limpia los datos del Excel"""
+    """Carga el archivo Excel"""
+    try:
+        # CORREGIDO: Con comillas dobles y nombre exacto
+        df = pd.read_excel("Informe Grupo 18.xlsx", sheet_name=0)
+        st.success("✅ Datos cargados correctamente")
+        return df
+    except FileNotFoundError:
+        st.error("❌ No se encontró el archivo 'Informe Grupo 18.xlsx'")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"❌ Error al cargar el archivo: {e}")
+        return pd.DataFrame()
+
+def main():
+    st.title("📊 Dashboard de Control de Proyectos")
     
-    # Datos extraídos del archivo (primeras filas como muestra)
-    # En producción, usar: pd.read_excel('Informe Grupo 18.xlsx')
+    df = load_data()
     
-    data = {
-        'SNIP': [358282, 358282, 61755, 61755, 317391, 'NA', 'NA', 317628, 317628, 343772, 343772, 359337, 359337, 242011, 242011, 359312, 359312, 359340, 359340, 331396],
-        'Proyecto': [
-            'REPOSICION CENTRO DE SALUD SANTO TOMAS DE CASTILLA',
-            'REPOSICION CENTRO DE SALUD SANTO TOMAS DE CASTILLA',
-            'CONSTRUCCION HOSPITAL CABECERA MUNICIPAL DE SAN PEDRO NECTA',
-            'CONSTRUCCION HOSPITAL CABECERA MUNICIPAL DE SAN PEDRO NECTA',
-            'MEJORAMIENTO INSTITUTO BASICO INEB JUSTO RUFINO BARRIOS',
-            'REMOZAMIENTO COPB ANEXO A EORM CASERÍO BOCA ANCHA',
-            'REMOZAMIENTO EORM ALDEA EL BONGO',
-            'REPOSICION CENTRO DE ATENCION PERMANENTE (CAP)',
-            'REPOSICION CENTRO DE ATENCION PERMANENTE (CAP)',
-            'MEJORAMIENTO ESCUELA OFICIAL RURAL MIXTA',
-            'MEJORAMIENTO ESCUELA OFICIAL RURAL MIXTA',
-            'REPOSICION PUESTO DE SALUD',
-            'REPOSICION PUESTO DE SALUD',
-            'CONSTRUCCION INSTITUTO MIXTO DIVERSIFICADO',
-            'CONSTRUCCION INSTITUTO MIXTO DIVERSIFICADO',
-            'MEJORAMIENTO INSTITUTO NACIONAL DE EDUCACIÓN BÁSICA',
-            'MEJORAMIENTO INSTITUTO NACIONAL DE EDUCACIÓN BÁSICA',
-            'MEJORAMIENTO INEB ADSCRITO',
-            'MEJORAMIENTO INEB ADSCRITO',
-            'MEJORAMIENTO ESCUELA OFICIAL URBANA MIXTA'
-        ],
-        'Municipio': ['PUERTO BARRIOS', 'PUERTO BARRIOS', 'SAN PEDRO NECTA', 'SAN PEDRO NECTA', 'SAN MARCOS', 'EL ESTOR', 'EL ESTOR', 'PAJAPITA', 'PAJAPITA', 'IXCAN', 'IXCAN', 'SANTA MARIA CHIQUIMULA', 'SANTA MARIA CHIQUIMULA', 'IXCAN', 'IXCAN', 'HUEHUETENANGO', 'HUEHUETENANGO', 'ESCUINTLA', 'ESCUINTLA', 'SAN ANTONIO HUISTA'],
-        'Departamento': ['IZABAL', 'IZABAL', 'HUEHUETENANGO', 'HUEHUETENANGO', 'SAN MARCOS', 'IZABAL', 'IZABAL', 'SAN MARCOS', 'SAN MARCOS', 'QUICHE', 'QUICHE', 'TOTONICAPAN', 'TOTONICAPAN', 'QUICHE', 'QUICHE', 'HUEHUETENANGO', 'HUEHUETENANGO', 'ESCUINTLA', 'ESCUINTLA', 'HUEHUETENANGO'],
-        'No_Contrato': ['01-2025-181-UCEE', '01-2025-181-UCEE', '02-2025-181-UCEE', '02-2025-181-UCEE', '03-2025-181-UCEE', '04-2025-181-UCEE', '04-2025-181-UCEE', '06-2025-181-UCEE', '06-2025-181-UCEE', '07-2025-181-UCEE', '07-2025-181-UCEE', '08-2025-181-UCEE', '08-2025-181-UCEE', '09-2025-181-UCEE', '09-2025-181-UCEE', '10-2025-181-UCEE', '10-2025-181-UCEE', '11-2025-181-UCEE', '11-2025-181-UCEE', '12-2025-181-UCEE'],
-        'Formulador': ['OCHOA OROZCO WENER ARMANDO', 'OCHOA OROZCO WENER ARMANDO', 'MONTERROSO NAJERA FERNANDO RAFAEL', 'MONTERROSO NAJERA FERNANDO RAFAEL', 'TENÍ POP WILMER DAN', 'CALDERÓN DE LEÓN PAÚL ALBERTO', 'CALDERÓN DE LEÓN PAÚL ALBERTO', 'RODRÍGUEZ FLORES MARCO LEONEL', 'RODRÍGUEZ FLORES MARCO LEONEL', 'ENRÍQUEZ ADOLFO DAVID ESTUARDO', 'ENRÍQUEZ ADOLFO DAVID ESTUARDO', 'ARA DONIS IVÁN ABISAI', 'ARA DONIS IVÁN ABISAI', 'CALDERÓN RODAS FEDEDMAN FEIDER', 'CALDERÓN RODAS FEDEDMAN FEIDER', 'SAQUIC LÓPEZ MYNOR OSWALDO', 'SAQUIC LÓPEZ MYNOR OSWALDO', 'BOROR HERNÁNDEZ LUIS PEDRO', 'BOROR HERNÁNDEZ LUIS PEDRO', 'ALONZO LÓPEZ GUILLERMO GEOVANI'],
-        'Nit': ['87017679', '87017679', '19089414', '19089414', '8321167', '1267866K', '1267866K', '35768274', '35768274', '1967760K', '1967760K', '67781217', '67781217', '15765873', '15765873', '67717802', '67717802', '94924171', '94924171', '18184685'],
-        'Producto': [
-            'ESTUDIO GEOTÉCNICO (LICUEFACCION)',
-            'ESTUDIO HIDROLÓGICO',
-            'ESTUDIO HIDROLOGICO',
-            'ESTUDIO GEOTECNICO (ESTABILIDAD DE LADERA)',
-            'ESTUDIO GEOTÉCNICO TIPO II',
-            'Fase A: Remozamiento',
-            'Fase B: Remozamiento',
-            'FASE A: Planificación',
-            'FASE B: Planificación',
-            'FASE A: Planificación',
-            'FASE B: Planificación',
-            'FASE A: Planificación',
-            'FASE B: Planificación',
-            'FASE A: Planificación',
-            'FASE B: Planificación',
-            'FASE A: Planificación',
-            'FASE B: Planificación',
-            'FASE A: Planificación',
-            'FASE B: Planificación',
-            'FASE A: Planificación'
-        ],
-        'Fecha_Informe': ['2025-03-31', '2025-05-30', '2025-05-26', '2025-05-30', '2025-04-30', '2025-08-31', '2025-08-31', '2025-07-31', '2025-10-31', '2025-07-31', '2025-09-30', '2025-07-31', '2025-09-30', '2025-07-31', '2025-09-30', '2025-07-31', '2025-09-30', '2025-07-31', '2025-09-30', '2025-07-31'],
-        'Fecha_Factura': ['2025-04-07', '2025-05-31', '2025-05-31', '2025-05-31', '2025-04-30', '2025-08-31', '2025-08-31', '2025-08-31', '2025-10-31', '2025-08-31', '2025-10-31', '2025-08-31', '2025-10-31', '2025-08-31', '2025-10-31', '2025-08-31', '2025-10-31', '2025-08-31', '2025-10-31', '2025-08-31'],
-        'Monto': [75000, 88000, 89000, 170000, 69000, 112000, 151200, 201600, 563360, 226800, 453600, 106400, 392000, 224000, 448000, 151200, 425600, 229600, 497280, 218400],
-        'Revisor': ['Ing. Juan Carlos Amado', 'Ing. Juan Carlos Amado', 'Ing. Juan Carlos Amado', 'Ing. Juan Carlos Amado', 'Ing. Juan Carlos Amado', 'N.D.', 'N.D.', 'ARQ. JULIO MONTENEGRO', '', 'ARQ. ANDREA CESETE VASQUEZ', 'ARQ. ANDREA CESETE VASQUEZ', 'ING. BYRON MELVIN TUL VELÁSQUEZ', 'ING. BYRON MELVIN TUL VELÁSQUEZ', 'N.D.', 'N.D.', 'ARQ. DIEGO FELIPE MEJÍA GUZMÁN', 'N.D.', 'ING. BYRON MELVIN TUL VELÁSQUEZ', 'N.D.', 'ARQ. MARÍA JOSÉ VILLAR FRANCO'],
-        'Tipo_Estudio': ['Geotecnico', 'Hidrologico', 'Hidrologico', 'Geotecnico', 'Geotecnico', 'Remozamiento', 'Remozamiento', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion', 'Planificacion']
-    }
+    if df.empty:
+        st.warning("No hay datos para mostrar")
+        return
+    
+    # Mostrar una vista previa
+    st.subheader("Vista previa de los datos")
+    st.dataframe(df.head(10))
+    
+    # Métricas básicas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Filas", len(df))
+    with col2:
+        if 'Monto' in df.columns:
+            st.metric("Monto Total", f"Q{df['Monto'].sum():,.0f}")
+    with col3:
+        if 'Departamento' in df.columns:
+            st.metric("Departamentos", df['Departamento'].nunique())
+
+if __name__ == "__main__":
+    main()
     
     df = pd.DataFrame(data)
     
