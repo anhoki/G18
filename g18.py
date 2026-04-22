@@ -7,7 +7,7 @@ st.set_page_config(page_title="Dashboard", layout="wide")
 @st.cache_data
 def load_data():
     """Carga el archivo Excel"""
-    df = pd.read_excel("DatosG18.xlsx", sheet_name=0)
+    df = pd.read_excel("DataG18.xlsx", sheet_name=0)
     return df  # ← Este return DENTRO de la función
 
 def main():
