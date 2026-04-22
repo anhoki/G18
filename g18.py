@@ -16,7 +16,7 @@ def load_data():
     """Carga el archivo Excel"""
     try:
         # CORREGIDO: Con comillas dobles y nombre exacto
-        df = pd.read_excel("Informe Grupo 18.xlsx", sheet_name=0)
+        df = pd.read_excel("DataG18.xlsx", sheet_name=0)
         st.success("✅ Datos cargados correctamente")
         return df
     except FileNotFoundError:
