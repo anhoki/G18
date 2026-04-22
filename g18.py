@@ -186,7 +186,7 @@ def main():
             return 'background-color: #ccffcc'
         return ''
     
-    styled_df = tabla_mostrar.style.applymap(color_riesgo, subset=['Nivel_Riesgo'])
+    styled_df = tabla_mostrar.style.map(color_riesgo, subset=['Nivel_Riesgo'])
     
     if col_monto:
         styled_df = styled_df.format({col_monto: '{:,.0f}'})
