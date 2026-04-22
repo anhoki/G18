@@ -22,55 +22,78 @@ def load_data():
     col_proveedor = next((col for col in df.columns if 'formulador' in col.lower() or 'proveedor' in col.lower()), None)
     col_tipo = next((col for col in df.columns if 'tipo' in col.lower() or 'estudio' in col.lower()), None)
     col_depto = next((col for col in df.columns if 'departamento' in col.lower()), None)
+    col_contrato = next((col for col in df.columns if 'contrato' in col.lower()), None)
     
-    if not all([col_monto, col_proveedor, col_tipo]):
+    if not all([col_monto, col_proveedor, col_tipo, col_contrato]):
         st.warning("No se encontraron todas las columnas necesarias")
         return df
     
-    # 1. Detectar proveedores riesgosos (múltiples contratos con montos similares)
-    proveedor_stats = df.groupby(col_proveedor)[col_monto].agg(['count', 'mean', 'std']).round(0)
-    proveedor_stats['coeficiente_var'] = proveedor_stats['std'] / proveedor_stats['mean']
+    # ============================================
+    # PASO 1: Agrupar por CONTRATO (sumar productos del mismo contrato)
+    # ============================================
+    df_contratos = df.groupby(col_contrato).agg({
+        col_proveedor: 'first',
+        col_monto: 'sum',  # Suma de todas las fases/productos
+        col_tipo: lambda x: ', '.join(x.unique()),
+        col_depto: 'first'
+    }).reset_index()
     
+    df_contratos.columns = ['No_Contrato', 'Proveedor', 'Monto_Total', 'Tipos_Estudio', 'Departamento']
+    
+    # ============================================
+    # PASO 2: Detectar proveedores con múltiples CONTRATOS sospechosos
+    # ============================================
+    proveedor_stats = df_contratos.groupby('Proveedor').agg({
+        'Monto_Total': ['count', 'mean', 'std']
+    }).round(0)
+    
+    proveedor_stats.columns = ['num_contratos', 'monto_promedio', 'desviacion']
+    proveedor_stats['coeficiente_var'] = proveedor_stats['desviacion'] / proveedor_stats['monto_promedio']
+    
+    # Un proveedor es riesgoso si:
+    # - Tiene 2 o más CONTRATOS DIFERENTES
+    # - La variación entre contratos es menor al 20% (montos muy similares)
     proveedores_riesgosos = proveedor_stats[
-        (proveedor_stats['count'] >= 2) & 
+        (proveedor_stats['num_contratos'] >= 2) & 
         (proveedor_stats['coeficiente_var'] < 0.2)
     ].index.tolist()
     
-    df['Proveedor_Riesgoso'] = df[col_proveedor].apply(lambda x: '⚠️ Sí' if x in proveedores_riesgosos else '✅ No')
+    # Marcar contratos de proveedores riesgosos
+    df_contratos['Proveedor_Riesgoso'] = df_contratos['Proveedor'].apply(
+        lambda x: '⚠️ Sí' if x in proveedores_riesgosos else '✅ No'
+    )
     
-    # 2. Calcular percentiles por tipo de estudio
+    # ============================================
+    # PASO 3: Calcular percentiles por tipo de estudio (a nivel contrato)
+    # ============================================
     percentiles_por_tipo = {}
-    for tipo in df[col_tipo].unique():
-        montos_tipo = df[df[col_tipo] == tipo][col_monto]
-        percentiles_por_tipo[tipo] = {
-            'p75': montos_tipo.quantile(0.75),
-            'p90': montos_tipo.quantile(0.90)
-        }
+    for tipo in df_contratos['Tipos_Estudio'].unique():
+        # Para cada combinación de tipos, calcular percentiles
+        montos_tipo = df_contratos[df_contratos['Tipos_Estudio'] == tipo]['Monto_Total']
+        if len(montos_tipo) > 0:
+            percentiles_por_tipo[tipo] = {
+                'p75': montos_tipo.quantile(0.75),
+                'p90': montos_tipo.quantile(0.90)
+            }
     
-    # 3. Contar frecuencia proveedor + tipo de estudio
-    conteo_proveedor_tipo = df.groupby([col_proveedor, col_tipo]).size().to_dict()
-    
-    # 4. Calcular nivel de riesgo
+    # ============================================
+    # PASO 4: Calcular nivel de riesgo por CONTRATO
+    # ============================================
     def calcular_riesgo(row):
         riesgo = 0
         
-        # Criterio 1: Proveedor riesgoso
+        # Criterio 1: Proveedor con múltiples contratos similares (+2)
         if row['Proveedor_Riesgoso'] == '⚠️ Sí':
             riesgo += 2
         
-        # Criterio 2: Monto en percentil alto
-        monto = row[col_monto]
-        tipo = row[col_tipo]
+        # Criterio 2: Monto del contrato en percentil alto (+1 o +2)
+        monto = row['Monto_Total']
+        tipo = row['Tipos_Estudio']
         percentiles = percentiles_por_tipo.get(tipo, {})
         
-        if monto > percentiles.get('p90', 0):
+        if monto > percentiles.get('p90', float('inf')):
             riesgo += 2
-        elif monto > percentiles.get('p75', 0):
-            riesgo += 1
-        
-        # Criterio 3: Mismo proveedor + mismo tipo repetido
-        clave = (row[col_proveedor], row[col_tipo])
-        if conteo_proveedor_tipo.get(clave, 0) > 2:
+        elif monto > percentiles.get('p75', float('inf')):
             riesgo += 1
         
         if riesgo >= 3:
@@ -79,16 +102,17 @@ def load_data():
             return '🟡 Medio'
         return '🟢 Bajo'
     
-    df['Nivel_Riesgo'] = df.apply(calcular_riesgo, axis=1)
+    df_contratos['Nivel_Riesgo'] = df_contratos.apply(calcular_riesgo, axis=1)
     
     # Guardar metadata
-    df.attrs['col_monto'] = col_monto
-    df.attrs['col_proveedor'] = col_proveedor
-    df.attrs['col_tipo'] = col_tipo
-    df.attrs['col_depto'] = col_depto
-    df.attrs['proveedores_riesgosos'] = proveedores_riesgosos
+    df_contratos.attrs['col_monto'] = 'Monto_Total'
+    df_contratos.attrs['col_proveedor'] = 'Proveedor'
+    df_contratos.attrs['col_tipo'] = 'Tipos_Estudio'
+    df_contratos.attrs['col_depto'] = 'Departamento'
+    df_contratos.attrs['col_contrato'] = 'No_Contrato'
+    df_contratos.attrs['proveedores_riesgosos'] = proveedores_riesgosos
     
-    return df
+    return df_contratos
 
 def main():
     st.title("📊 Dashboard de Control de Proyectos")
@@ -100,15 +124,16 @@ def main():
         st.warning("No hay datos para mostrar")
         return
     
-    col_monto = df.attrs.get('col_monto')
-    col_proveedor = df.attrs.get('col_proveedor')
-    col_tipo = df.attrs.get('col_tipo')
-    col_depto = df.attrs.get('col_depto')
+    col_monto = 'Monto_Total'
+    col_proveedor = 'Proveedor'
+    col_tipo = 'Tipos_Estudio'
+    col_depto = 'Departamento'
+    col_contrato = 'No_Contrato'
     
     # Sidebar con filtros
     st.sidebar.header("🔍 Filtros")
     
-    if col_depto:
+    if col_depto in df.columns:
         deptos = st.sidebar.multiselect(
             "Departamento",
             options=sorted(df[col_depto].dropna().unique()),
@@ -124,7 +149,7 @@ def main():
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("Total Proyectos", len(df_filtrado))
+        st.metric("Total Contratos", len(df_filtrado))
     with col2:
         st.metric("Monto Total", f"Q{df_filtrado[col_monto].sum():,.0f}")
     with col3:
@@ -132,56 +157,70 @@ def main():
     with col4:
         st.metric("🟡 Medio Riesgo", len(df_filtrado[df_filtrado['Nivel_Riesgo'] == '🟡 Medio']))
     with col5:
-        st.metric("⚠️ Proveedores Riesgosos", len(df_filtrado[df_filtrado['Proveedor_Riesgoso'] == '⚠️ Sí'].drop_duplicates(subset=[col_proveedor])))
+        num_proveedores_riesgosos = len(df_filtrado[df_filtrado['Proveedor_Riesgoso'] == '⚠️ Sí'][col_proveedor].unique())
+        st.metric("⚠️ Proveedores con Patrón", num_proveedores_riesgosos)
     
     st.markdown("---")
     
-    # Gráfico de proveedores riesgosos
-    st.subheader("🚨 Proveedores con Patrón Sospechoso")
+    # Proveedores sospechosos (con múltiples contratos similares)
+    st.subheader("🚨 Proveedores con Múltiples Contratos de Montos Similares")
     
-    if df_filtrado['Proveedor_Riesgoso'].value_counts().get('⚠️ Sí', 0) > 0:
-        proveedores_riesgosos = df_filtrado[df_filtrado['Proveedor_Riesgoso'] == '⚠️ Sí'][col_proveedor].unique()
-        
+    proveedores_riesgosos = df_filtrado[df_filtrado['Proveedor_Riesgoso'] == '⚠️ Sí'][col_proveedor].unique()
+    
+    if len(proveedores_riesgosos) > 0:
         for proveedor in proveedores_riesgosos:
             df_prov = df_filtrado[df_filtrado[col_proveedor] == proveedor]
+            
+            # Calcular estadísticas
+            num_contratos = len(df_prov)
+            monto_promedio = df_prov[col_monto].mean()
+            monto_min = df_prov[col_monto].min()
+            monto_max = df_prov[col_monto].max()
+            variacion = (df_prov[col_monto].std() / monto_promedio) if monto_promedio > 0 else 0
+            
             st.markdown(f"""
-            <div class="risk-high">
+            <div style="background-color: #ffcccc; padding: 15px; border-radius: 10px; margin-bottom: 10px;">
                 <b>⚠️ {proveedor}</b><br>
-                📊 {len(df_prov)} contratos | 💰 Monto promedio: Q{df_prov[col_monto].mean():,.0f} | 📉 Variación: {df_prov[col_monto].std()/df_prov[col_monto].mean():.1%}
+                📄 {num_contratos} contratos | 💰 Promedio: Q{monto_promedio:,.0f}<br>
+                📉 Rango: Q{monto_min:,.0f} - Q{monto_max:,.0f} | 📊 Variación: {variacion:.1%}
             </div>
             """, unsafe_allow_html=True)
+            
+            # Mostrar los contratos de este proveedor
+            st.dataframe(df_prov[[col_contrato, col_monto, col_tipo, col_depto, 'Nivel_Riesgo']])
+            st.markdown("---")
     else:
-        st.info("✅ No se detectaron proveedores con patrón sospechoso")
-    
-    st.markdown("---")
+        st.info("✅ No se detectaron proveedores con múltiples contratos de montos muy similares")
     
     # Gráficos
-    if col_monto and col_depto:
+    if col_monto and col_depto in df_filtrado.columns:
         col1, col2 = st.columns(2)
         
         with col1:
             st.subheader("💰 Montos por Departamento")
             monto_depto = df_filtrado.groupby(col_depto)[col_monto].sum().sort_values()
-            fig = px.bar(x=monto_depto.values, y=monto_depto.index, orientation='h')
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            if len(monto_depto) > 0:
+                fig = px.bar(x=monto_depto.values, y=monto_depto.index, orientation='h')
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             st.subheader("🎯 Montos por Tipo de Estudio")
-            monto_tipo = df_filtrado.groupby(col_tipo)[col_monto].sum().sort_values()
-            fig = px.pie(values=monto_tipo.values, names=monto_tipo.index)
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            # Simplificar tipos (tomar el primero si hay múltiples)
+            df_filtrado['Tipo_Principal'] = df_filtrado[col_tipo].apply(lambda x: x.split(',')[0] if pd.notna(x) else 'Otro')
+            monto_tipo = df_filtrado.groupby('Tipo_Principal')[col_monto].sum().sort_values()
+            if len(monto_tipo) > 0:
+                fig = px.pie(values=monto_tipo.values, names=monto_tipo.index)
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
     
-    # Tabla de datos
+    # Tabla de contratos
     st.subheader("📋 Detalle de Contratos")
     
-    columnas_mostrar = []
-    for col in [col_proveedor, col_tipo, col_depto, col_monto, 'Proveedor_Riesgoso', 'Nivel_Riesgo']:
-        if col and col in df_filtrado.columns:
-            columnas_mostrar.append(col)
+    columnas_mostrar = [col_contrato, col_proveedor, col_tipo, col_depto, col_monto, 'Proveedor_Riesgoso', 'Nivel_Riesgo']
+    columnas_existentes = [col for col in columnas_mostrar if col in df_filtrado.columns]
     
-    tabla_mostrar = df_filtrado[columnas_mostrar].copy()
+    tabla_mostrar = df_filtrado[columnas_existentes].copy()
     tabla_mostrar = tabla_mostrar.fillna('')
     
     def color_riesgo(val):
@@ -195,7 +234,7 @@ def main():
     
     styled_df = tabla_mostrar.style.map(color_riesgo, subset=['Nivel_Riesgo'])
     
-    if col_monto:
+    if col_monto in tabla_mostrar.columns:
         styled_df = styled_df.format({col_monto: '{:,.0f}'})
     
     st.dataframe(styled_df, use_container_width=True, height=400)
@@ -206,19 +245,18 @@ def main():
     
     recomendaciones = []
     
-    proveedores_riesgosos_lista = df_filtrado[df_filtrado['Proveedor_Riesgoso'] == '⚠️ Sí'][col_proveedor].unique()
-    if len(proveedores_riesgosos_lista) > 0:
-        recomendaciones.append(f"🔴 **Auditar a {len(proveedores_riesgosos_lista)} proveedores** que ganaron múltiples contratos con montos muy similares")
+    if len(proveedores_riesgosos) > 0:
+        recomendaciones.append(f"🔴 **Auditar a {len(proveedores_riesgosos)} proveedores** que ganaron múltiples contratos con montos muy similares (variación <20%)")
     
-    proyectos_alto_riesgo = df_filtrado[df_filtrado['Nivel_Riesgo'] == '🔴 Alto']
-    if len(proyectos_alto_riesgo) > 0:
-        recomendaciones.append(f"🟠 **Revisar {len(proyectos_alto_riesgo)} proyectos en alto riesgo** por montos significativamente superiores al promedio")
+    num_alto_riesgo = len(df_filtrado[df_filtrado['Nivel_Riesgo'] == '🔴 Alto'])
+    if num_alto_riesgo > 0:
+        recomendaciones.append(f"🟠 **Revisar {num_alto_riesgo} contratos en alto riesgo** por montos significativamente superiores al percentil 90")
     
     if not recomendaciones:
         st.success("✅ No se detectaron anomalías significativas")
-    
-    for rec in recomendaciones:
-        st.markdown(f"- {rec}")
+    else:
+        for rec in recomendaciones:
+            st.markdown(f"- {rec}")
 
 if __name__ == "__main__":
     main()
