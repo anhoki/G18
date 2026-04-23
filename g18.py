@@ -1,36 +1,45 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import os
+import folium
+from streamlit_folium import folium_static
+from folium.plugins import HeatMap
 
-st.set_page_config(page_title="Dashboard de Proyectos", layout="wide")
+st.set_page_config(page_title="Dashboard de Proyectos - Guatemala", layout="wide")
 
-# Diccionario de departamentos de Guatemala con coordenadas aproximadas
-DEPARTAMENTOS_GUATEMALA = {
-    'GUATEMALA': {'lat': 14.6349, 'lon': -90.5069},
-    'EL PROGRESO': {'lat': 14.8500, 'lon': -90.0667},
-    'SACATEPEQUEZ': {'lat': 14.5333, 'lon': -90.7333},
-    'CHIMALTENANGO': {'lat': 14.7000, 'lon': -90.8167},
-    'ESCUINTLA': {'lat': 14.3000, 'lon': -90.7833},
-    'SANTA ROSA': {'lat': 14.1667, 'lon': -90.3500},
-    'SOLOLÁ': {'lat': 14.7667, 'lon': -91.1833},
-    'TOTONICAPÁN': {'lat': 14.9167, 'lon': -91.3667},
-    'QUETZALTENANGO': {'lat': 14.8333, 'lon': -91.5167},
-    'SUCHITEPÉQUEZ': {'lat': 14.5333, 'lon': -91.5000},
-    'RETALHULEU': {'lat': 14.5333, 'lon': -91.6833},
-    'SAN MARCOS': {'lat': 14.9667, 'lon': -91.8000},
-    'HUEHUETENANGO': {'lat': 15.3167, 'lon': -91.4667},
-    'QUICHÉ': {'lat': 15.3000, 'lon': -91.0000},
-    'BAJA VERAPAZ': {'lat': 15.1333, 'lon': -90.3667},
-    'ALTA VERAPAZ': {'lat': 15.5000, 'lon': -90.3333},
-    'PETÉN': {'lat': 16.9000, 'lon': -89.9000},
-    'IZABAL': {'lat': 15.5000, 'lon': -88.5000},
-    'ZACAPA': {'lat': 14.9667, 'lon': -89.5333},
-    'CHIQUIMULA': {'lat': 14.8000, 'lon': -89.5333},
-    'JALAPA': {'lat': 14.6333, 'lon': -89.9833},
-    'JUTIAPA': {'lat': 14.2833, 'lon': -89.9000},
+# ============================================
+# COORDENADAS DE DEPARTAMENTOS DE GUATEMALA
+# ============================================
+COORDENADAS_DEPARTAMENTOS = {
+    'GUATEMALA': [14.6349, -90.5069],
+    'EL PROGRESO': [14.8500, -90.0667],
+    'SACATEPEQUEZ': [14.5333, -90.7333],
+    'CHIMALTENANGO': [14.7000, -90.8167],
+    'ESCUINTLA': [14.3000, -90.7833],
+    'SANTA ROSA': [14.1667, -90.3500],
+    'SOLOLÁ': [14.7667, -91.1833],
+    'TOTONICAPÁN': [14.9167, -91.3667],
+    'QUETZALTENANGO': [14.8333, -91.5167],
+    'SUCHITEPÉQUEZ': [14.5333, -91.5000],
+    'RETALHULEU': [14.5333, -91.6833],
+    'SAN MARCOS': [14.9667, -91.8000],
+    'HUEHUETENANGO': [15.3167, -91.4667],
+    'QUICHÉ': [15.3000, -91.0000],
+    'BAJA VERAPAZ': [15.1333, -90.3667],
+    'ALTA VERAPAZ': [15.5000, -90.3333],
+    'PETÉN': [16.9000, -89.9000],
+    'IZABAL': [15.5000, -88.5000],
+    'ZACAPA': [14.9667, -89.5333],
+    'CHIQUIMULA': [14.8000, -89.5333],
+    'JALAPA': [14.6333, -89.9833],
+    'JUTIAPA': [14.2833, -89.9000],
 }
 
+# ============================================
+# CARGA DE DATOS
+# ============================================
 @st.cache_data
 def load_data():
     """Carga y prepara los datos"""
@@ -72,31 +81,20 @@ def load_data():
         
         df_contratos.columns = ['No_Contrato', 'Proveedor', 'Monto_Total', 'Tipos_Estudio', 'Departamento']
         
-        # Limpiar nombres de departamentos (mayúsculas para coincidir con el diccionario)
+        # Limpiar nombres de departamentos
         if 'Departamento' in df_contratos.columns:
             df_contratos['Departamento'] = df_contratos['Departamento'].str.upper().str.strip()
             
-            # Mapear nombres que puedan tener variaciones
             mapa_departamentos = {
-                'HUEHUETENANGO': 'HUEHUETENANGO',
-                'HUEHUETENANGO ': 'HUEHUETENANGO',
-                'QUICHE': 'QUICHÉ',
-                'QUICHÉ': 'QUICHÉ',
-                'SOLOLA': 'SOLOLÁ',
-                'SOLOLÁ': 'SOLOLÁ',
-                'TOTONICAPAN': 'TOTONICAPÁN',
-                'TOTONICAPÁN': 'TOTONICAPÁN',
-                'SAN MARCOS': 'SAN MARCOS',
-                'IZABAL': 'IZABAL',
-                'EL PROGRESO': 'EL PROGRESO',
-                'GUATEMALA': 'GUATEMALA',
-                'ESCUINTLA': 'ESCUINTLA',
-                'SANTA ROSA': 'SANTA ROSA',
-                'QUETZALTENANGO': 'QUETZALTENANGO'
+                'HUEHUETENANGO': 'HUEHUETENANGO', 'QUICHE': 'QUICHÉ', 'QUICHÉ': 'QUICHÉ',
+                'SOLOLA': 'SOLOLÁ', 'SOLOLÁ': 'SOLOLÁ', 'TOTONICAPAN': 'TOTONICAPÁN',
+                'TOTONICAPÁN': 'TOTONICAPÁN', 'SAN MARCOS': 'SAN MARCOS', 'IZABAL': 'IZABAL',
+                'EL PROGRESO': 'EL PROGRESO', 'GUATEMALA': 'GUATEMALA', 'ESCUINTLA': 'ESCUINTLA',
+                'SANTA ROSA': 'SANTA ROSA', 'QUETZALTENANGO': 'QUETZALTENANGO'
             }
             df_contratos['Departamento'] = df_contratos['Departamento'].map(mapa_departamentos).fillna(df_contratos['Departamento'])
         
-        # Calcular riesgo
+        # Calcular proveedores riesgosos
         proveedor_stats = df_contratos.groupby('Proveedor').agg({
             'Monto_Total': ['count', 'mean', 'std']
         }).round(0)
@@ -113,7 +111,7 @@ def load_data():
             lambda x: '⚠️ Sí' if x in proveedores_riesgosos else '✅ No'
         )
         
-        # Calcular percentiles
+        # Calcular percentiles por tipo de estudio
         percentiles_por_tipo = {}
         for tipo in df_contratos['Tipos_Estudio'].unique():
             montos_tipo = df_contratos[df_contratos['Tipos_Estudio'] == tipo]['Monto_Total']
@@ -123,6 +121,7 @@ def load_data():
                     'p90': montos_tipo.quantile(0.90)
                 }
         
+        # Calcular nivel de riesgo
         def calcular_riesgo(row):
             riesgo = 0
             if row['Proveedor_Riesgoso'] == '⚠️ Sí':
@@ -149,74 +148,11 @@ def load_data():
     
     return pd.DataFrame()
 
-def crear_mapa(df, tipo_estudio_filtro=None):
-    """Crea un mapa de calor de Guatemala con los montos por departamento"""
-    
-    if df.empty or 'Departamento' not in df.columns:
-        return None
-    
-    # Filtrar por tipo de estudio si se especifica
-    df_mapa = df.copy()
-    if tipo_estudio_filtro and tipo_estudio_filtro != 'Todos':
-        df_mapa = df_mapa[df_mapa['Tipos_Estudio'].str.contains(tipo_estudio_filtro, case=False, na=False)]
-    
-    # Agrupar por departamento
-    monto_por_depto = df_mapa.groupby('Departamento')['Monto_Total'].sum().reset_index()
-    monto_por_depto.columns = ['Departamento', 'Monto_Total']
-    
-    # Agregar coordenadas
-    monto_por_depto['lat'] = monto_por_depto['Departamento'].map(lambda x: DEPARTAMENTOS_GUATEMALA.get(x, {}).get('lat', 15.5))
-    monto_por_depto['lon'] = monto_por_depto['Departamento'].map(lambda x: DEPARTAMENTOS_GUATEMALA.get(x, {}).get('lon', -90.5))
-    monto_por_depto['text'] = monto_por_depto.apply(
-        lambda x: f"<b>{x['Departamento']}</b><br>💰 Q{x['Monto_Total']:,.0f}", axis=1
-    )
-    
-    # Crear mapa de burbujas (tamaño proporcional al monto)
-    fig = px.scatter_geo(
-        monto_por_depto,
-        lat='lat',
-        lon='lon',
-        size='Monto_Total',
-        color='Monto_Total',
-        text='Departamento',
-        hover_name='Departamento',
-        hover_data={'Monto_Total': ':,.0f', 'lat': False, 'lon': False},
-        size_max=50,
-        color_continuous_scale='Viridis',
-        title=f'Distribución de Inversión por Departamento<br>{tipo_estudio_filtro if tipo_estudio_filtro and tipo_estudio_filtro != "Todos" else "Todos los tipos de estudio"}',
-        projection='natural earth'
-    )
-    
-    fig.update_traces(
-        marker=dict(sizeref=2.*max(monto_por_depto['Monto_Total'])/(50**2)),
-        hovertemplate='<b>%{hovertext}</b><br>💰 Monto: Q%{customdata[0]:,.0f}<extra></extra>'
-    )
-    
-    fig.update_geos(
-        showcountries=True,
-        countrycolor='LightGray',
-        showcoastlines=True,
-        coastlinecolor='Gray',
-        showland=True,
-        landcolor='rgb(243, 243, 243)',
-        showocean=True,
-        oceancolor='LightBlue',
-        showframe=False,
-        fitbounds='locations',
-        visible=True,
-        resolution=50
-    )
-    
-    fig.update_layout(
-        height=550,
-        margin={"r":0, "t":50, "l":0, "b":0},
-        coloraxis_colorbar=dict(title="Monto (Q)")
-    )
-    
-    return fig
-
-def crear_mapa_barras(df, tipo_estudio_filtro=None):
-    """Crea un gráfico de barras geográfico alternativo (si el mapa no funciona)"""
+# ============================================
+# FUNCIONES DE MAPA
+# ============================================
+def crear_mapa_burbujas(df, tipo_estudio_filtro=None):
+    """Crea un mapa de burbujas con folium"""
     
     if df.empty or 'Departamento' not in df.columns:
         return None
@@ -226,26 +162,93 @@ def crear_mapa_barras(df, tipo_estudio_filtro=None):
         df_mapa = df_mapa[df_mapa['Tipos_Estudio'].str.contains(tipo_estudio_filtro, case=False, na=False)]
     
     monto_por_depto = df_mapa.groupby('Departamento')['Monto_Total'].sum().reset_index()
-    monto_por_depto = monto_por_depto.sort_values('Monto_Total', ascending=True)
     
-    fig = px.bar(
-        monto_por_depto,
-        x='Monto_Total',
-        y='Departamento',
-        orientation='h',
-        color='Monto_Total',
-        color_continuous_scale='Viridis',
-        title=f'Inversión por Departamento<br>{tipo_estudio_filtro if tipo_estudio_filtro and tipo_estudio_filtro != "Todos" else "Todos los tipos"}',
-        labels={'Monto_Total': 'Monto (Q)', 'Departamento': ''}
-    )
+    if monto_por_depto.empty:
+        return None
     
-    fig.update_layout(height=500)
-    fig.update_traces(texttemplate='Q%{x:,.0f}', textposition='outside')
+    center_lat = 15.5
+    center_lon = -90.25
     
-    return fig
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles='OpenStreetMap')
+    
+    max_monto = monto_por_depto['Monto_Total'].max()
+    min_radius = 15
+    max_radius = 50
+    
+    for _, row in monto_por_depto.iterrows():
+        depto = row['Departamento']
+        monto = row['Monto_Total']
+        
+        coords = COORDENADAS_DEPARTAMENTOS.get(depto.upper())
+        if not coords:
+            continue
+        
+        radius = min_radius + (monto / max_monto) * (max_radius - min_radius) if max_monto > 0 else min_radius
+        
+        folium.CircleMarker(
+            location=coords,
+            radius=radius,
+            popup=folium.Popup(f"""
+                <b>{depto}</b><br>
+                💰 Monto: Q{monto:,.0f}<br>
+                📊 Proyectos: {len(df_mapa[df_mapa['Departamento'] == depto])}
+            """, max_width=300),
+            tooltip=f"{depto}: Q{monto:,.0f}",
+            color='#2E86AB',
+            fill=True,
+            fill_color='#2E86AB',
+            fill_opacity=0.6,
+            weight=2
+        ).add_to(m)
+        
+        folium.map.Marker(
+            coords,
+            icon=folium.DivIcon(
+                icon_size=(80, 20),
+                icon_anchor=(40, -radius - 5),
+                html=f'<div style="font-size: 10px; font-weight: bold; background: white; padding: 2px 5px; border-radius: 5px; border: 1px solid #2E86AB;">Q{monto/1000000:.1f}M</div>'
+            )
+        ).add_to(m)
+    
+    return m
 
+def crear_mapa_calor(df, tipo_estudio_filtro=None):
+    """Crea un mapa de calor con folium"""
+    
+    if df.empty or 'Departamento' not in df.columns:
+        return None
+    
+    df_mapa = df.copy()
+    if tipo_estudio_filtro and tipo_estudio_filtro != 'Todos':
+        df_mapa = df_mapa[df_mapa['Tipos_Estudio'].str.contains(tipo_estudio_filtro, case=False, na=False)]
+    
+    heat_data = []
+    for _, row in df_mapa.iterrows():
+        depto = row['Departamento']
+        monto = row['Monto_Total']
+        coords = COORDENADAS_DEPARTAMENTOS.get(depto.upper())
+        if coords:
+            intensidad = min(100, int(monto / 100000))
+            for _ in range(intensidad):
+                heat_data.append(coords)
+    
+    if not heat_data:
+        return None
+    
+    center_lat = 15.5
+    center_lon = -90.25
+    
+    heat_map = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles='OpenStreetMap')
+    
+    HeatMap(heat_data, radius=20, blur=15, min_opacity=0.3, max_zoom=10).add_to(heat_map)
+    
+    return heat_map
+
+# ============================================
+# MAIN
+# ============================================
 def main():
-    st.title("📊 Dashboard de Control de Proyectos")
+    st.title("📊 Dashboard de Control de Proyectos de Infraestructura")
     st.markdown("---")
     
     df = load_data()
@@ -257,7 +260,6 @@ def main():
     # ========== SIDEBAR ==========
     st.sidebar.header("🔍 Filtros")
     
-    # Filtro de departamento
     if 'Departamento' in df.columns:
         deptos = st.sidebar.multiselect(
             "Departamento",
@@ -268,7 +270,6 @@ def main():
     else:
         df_filtrado = df
     
-    # Filtro de tipo de estudio
     tipos_estudio = ['Todos'] + sorted(df['Tipos_Estudio'].unique().tolist())
     tipo_seleccionado = st.sidebar.selectbox("Tipo de Estudio", tipos_estudio)
     
@@ -291,22 +292,61 @@ def main():
     
     st.markdown("---")
     
-    # ========== MAPA INTERACTIVO ==========
+    # ========== GRÁFICOS ==========
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("💰 Montos por Departamento")
+        monto_depto = df_filtrado.groupby('Departamento')['Monto_Total'].sum().sort_values(ascending=True)
+        if not monto_depto.empty:
+            fig = px.bar(
+                x=monto_depto.values,
+                y=monto_depto.index,
+                orientation='h',
+                color=monto_depto.values,
+                color_continuous_scale='Viridis',
+                labels={'x': 'Monto Total (Q)', 'y': ''}
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("🚨 Nivel de Riesgo")
+        riesgo_counts = df_filtrado['Nivel_Riesgo'].value_counts()
+        if not riesgo_counts.empty:
+            fig = px.pie(
+                values=riesgo_counts.values,
+                names=riesgo_counts.index,
+                color=riesgo_counts.index,
+                color_discrete_map={'🔴 Alto': 'red', '🟡 Medio': 'orange', '🟢 Bajo': 'green'}
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # ========== MAPA ==========
     st.subheader("🗺️ Distribución Geográfica de la Inversión")
     
     tipo_para_mapa = None if tipo_seleccionado == 'Todos' else tipo_seleccionado
     
-    # Intentar crear el mapa
-    fig_mapa = crear_mapa(df_filtrado, tipo_para_mapa)
+    tab1, tab2 = st.tabs(["📍 Mapa de Burbujas", "🔥 Mapa de Calor"])
     
-    if fig_mapa:
-        st.plotly_chart(fig_mapa, use_container_width=True)
-    else:
-        # Fallback: gráfico de barras
-        st.info("No se pudo cargar el mapa. Mostrando gráfico de barras alternativo.")
-        fig_barras = crear_mapa_barras(df_filtrado, tipo_para_mapa)
-        if fig_barras:
-            st.plotly_chart(fig_barras, use_container_width=True)
+    with tab1:
+        st.caption("💡 El tamaño de cada burbuja representa el monto total invertido en el departamento")
+        mapa_burbujas = crear_mapa_burbujas(df_filtrado, tipo_para_mapa)
+        if mapa_burbujas:
+            folium_static(mapa_burbujas, width=1200, height=550)
+        else:
+            st.info("ℹ️ No hay datos suficientes para mostrar el mapa")
+    
+    with tab2:
+        st.caption("💡 Las zonas más calientes indican mayor concentración de inversión")
+        mapa_calor = crear_mapa_calor(df_filtrado, tipo_para_mapa)
+        if mapa_calor:
+            folium_static(mapa_calor, width=1200, height=550)
+        else:
+            st.info("ℹ️ No hay datos suficientes para el mapa de calor")
     
     st.markdown("---")
     
@@ -342,6 +382,9 @@ def main():
                 📄 {len(df_prov)} contratos | 💰 Promedio: Q{df_prov['Monto_Total'].mean():,.0f}
             </div>
             """, unsafe_allow_html=True)
+            
+            st.dataframe(df_prov[['No_Contrato', 'Monto_Total', 'Tipos_Estudio', 'Departamento', 'Nivel_Riesgo']])
+            st.markdown("---")
     else:
         st.info("✅ No se detectaron proveedores con múltiples contratos de montos muy similares")
     
@@ -388,6 +431,10 @@ def main():
     else:
         for rec in recomendaciones:
             st.markdown(f"- {rec}")
+    
+    # ========== FOOTER ==========
+    st.markdown("---")
+    st.caption(f"📅 Última actualización: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 if __name__ == "__main__":
     main()
